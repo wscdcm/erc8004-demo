@@ -1,4 +1,4 @@
-# ERC-8004 Trustless Agents · Sepolia Demo
+﻿# ERC-8004 Trustless Agents · Sepolia Demo
 
 Interactive demo for [ERC-8004 (Trustless Agents)](https://github.com/ethereum/ERCs/issues/1696) — AI Agent on-chain identity system deployed on Sepolia testnet.
 
@@ -46,6 +46,18 @@ Grand Loop v3 — all 5 phases passed (36.8s):
 - Hardhat 2.x (with viaIR for stack-too-deep)
 - ethers.js v6
 - Ethereum Sepolia Testnet
+
+
+## 🔗 ERC-8004 Ecosystem
+
+Our deployment uses a custom ERC8004IdentityV2 implementation. For the official ERC-8004 adapter pattern (UUPS upgradeable, binding external tokens to identity records), check out:
+
+- **adapter8004.xyz** — Official ERC-8004 Identity Adapter by [@nxt3d](https://github.com/nxt3d)
+  - Deployed on: Ethereum, Base, Sepolia
+  - GitHub: [nxt3d/adapter](https://github.com/nxt3d/adapter)
+  - ERC-8217 binding standard: [PR #1648](https://github.com/ethereum/ERCs/pull/1648)
+
+Our V2 contracts implement the same core ERC-8004 semantics (Identity NFT + Reputation + Validation) with additional DeFi-specific extensions (Vault, StrategyExecutor, CrossChainBridge).
 
 ## License
 
