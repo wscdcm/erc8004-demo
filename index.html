@@ -1,0 +1,942 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ERC-8004 Trustless Agents · Sepolia Live Demo</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.ethers.io/lib/ethers-5.7.2.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; overflow-x: hidden; }
+    .mono { font-family: 'Cascadia Code', 'Fira Code', 'Consolas', 'Courier New', monospace; }
+
+    .mesh-bg {
+      position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: -1;
+      background: #020617; overflow: hidden;
+    }
+    .mesh-bg::before, .mesh-bg::after {
+      content: ''; position: absolute; border-radius: 50%; filter: blur(120px); opacity: 0.15;
+    }
+    .mesh-bg::before {
+      width: 600px; height: 600px; top: -200px; left: -100px;
+      background: radial-gradient(circle, #3b82f6, transparent 70%);
+      animation: float1 20s ease-in-out infinite;
+    }
+    .mesh-bg::after {
+      width: 500px; height: 500px; bottom: -150px; right: -100px;
+      background: radial-gradient(circle, #8b5cf6, transparent 70%);
+      animation: float2 25s ease-in-out infinite;
+    }
+    @keyframes float1 {
+      0%,100% { transform: translate(0,0) scale(1); }
+      33% { transform: translate(100px,80px) scale(1.1); }
+      66% { transform: translate(-50px,120px) scale(0.9); }
+    }
+    @keyframes float2 {
+      0%,100% { transform: translate(0,0) scale(1); }
+      33% { transform: translate(-80px,-60px) scale(1.15); }
+      66% { transform: translate(60px,-100px) scale(0.95); }
+    }
+    .mesh-orb {
+      position: absolute; border-radius: 50%; filter: blur(100px); opacity: 0.1;
+      width: 400px; height: 400px; top: 50%; left: 50%;
+      background: radial-gradient(circle, #10b981, transparent 70%);
+      animation: float3 30s ease-in-out infinite;
+    }
+    @keyframes float3 {
+      0%,100% { transform: translate(-50%,-50%) scale(1); }
+      50% { transform: translate(-30%,-70%) scale(1.2); }
+    }
+
+    .grid-overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: -1;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+      background-size: 60px 60px;
+    }
+
+    .glass {
+      background: rgba(15, 23, 42, 0.6);
+      backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(255,255,255,0.06);
+      transition: all 0.3s ease;
+    }
+    .glass:hover { border-color: rgba(255,255,255,0.12); }
+
+    .glow-blue { box-shadow: 0 0 40px rgba(59,130,246,0.08), inset 0 1px 0 rgba(59,130,246,0.1); }
+    .glow-green { box-shadow: 0 0 40px rgba(16,185,129,0.08), inset 0 1px 0 rgba(16,185,129,0.1); }
+    .glow-purple { box-shadow: 0 0 40px rgba(139,92,246,0.08), inset 0 1px 0 rgba(139,92,246,0.1); }
+
+    .gradient-text {
+      background: linear-gradient(135deg, #60a5fa 0%, #a78bfa 50%, #f472b6 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .gradient-text-blue {
+      background: linear-gradient(135deg, #3b82f6, #60a5fa);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .gradient-text-green {
+      background: linear-gradient(135deg, #10b981, #34d399);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .gradient-text-purple {
+      background: linear-gradient(135deg, #8b5cf6, #a78bfa);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+
+    .shield {
+      width: 56px; height: 56px; position: relative;
+      background: linear-gradient(135deg, #1e40af, #7c3aed);
+      border-radius: 14px; display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 0 30px rgba(59,130,246,0.3), 0 0 60px rgba(139,92,246,0.15);
+    }
+    .shield::after {
+      content: ''; position: absolute; inset: -2px; border-radius: 16px; z-index: -1;
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6, #ec4899);
+      opacity: 0.4; filter: blur(8px);
+    }
+
+    .tab-btn {
+      padding: 10px 20px; cursor: pointer; font-size: 0.8rem; font-weight: 500;
+      border-bottom: 2px solid transparent; transition: all 0.3s;
+      color: #64748b; position: relative;
+    }
+    .tab-btn:hover { color: #94a3b8; }
+    .tab-btn.active { color: #3b82f6; }
+    .tab-btn.active::after {
+      content: ''; position: absolute; bottom: -1px; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, #3b82f6, #8b5cf6); border-radius: 2px;
+    }
+
+    .btn {
+      font-weight: 500; font-size: 0.85rem; border-radius: 10px;
+      padding: 10px 20px; cursor: pointer; border: none; color: white;
+      transition: all 0.25s ease; position: relative; overflow: hidden;
+    }
+    .btn::before {
+      content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+      transition: left 0.5s;
+    }
+    .btn:hover::before { left: 100%; }
+    .btn:active { transform: scale(0.98); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; }
+    .btn-blue { background: linear-gradient(135deg, #2563eb, #3b82f6); box-shadow: 0 4px 15px rgba(37,99,235,0.3); }
+    .btn-blue:hover { box-shadow: 0 6px 25px rgba(37,99,235,0.4); transform: translateY(-1px); }
+    .btn-green { background: linear-gradient(135deg, #059669, #10b981); box-shadow: 0 4px 15px rgba(5,150,105,0.3); }
+    .btn-green:hover { box-shadow: 0 6px 25px rgba(5,150,105,0.4); transform: translateY(-1px); }
+    .btn-purple { background: linear-gradient(135deg, #7c3aed, #8b5cf6); box-shadow: 0 4px 15px rgba(124,58,237,0.3); }
+    .btn-purple:hover { box-shadow: 0 6px 25px rgba(124,58,237,0.4); transform: translateY(-1px); }
+    .btn-ghost {
+      background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+      box-shadow: none; color: #94a3b8;
+    }
+    .btn-ghost:hover { background: rgba(255,255,255,0.1); color: #e2e8f0; box-shadow: none; transform: none; }
+
+    .input {
+      width: 100%; background: rgba(15,23,42,0.8); border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 10px; padding: 10px 14px; font-size: 0.85rem; color: #e2e8f0;
+      transition: all 0.2s; outline: none;
+    }
+    .input:focus { border-color: rgba(59,130,246,0.5); box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
+    .input.mono { font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; }
+    .input-green:focus { border-color: rgba(16,185,129,0.5); box-shadow: 0 0 0 3px rgba(16,185,129,0.1); }
+    .input-purple:focus { border-color: rgba(139,92,246,0.5); box-shadow: 0 0 0 3px rgba(139,92,246,0.1); }
+
+    select.input { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2364748b' d='M6 8L1 3h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 36px; }
+    select.input option { background: #0f172a; color: #e2e8f0; }
+
+    .progress-track { height: 8px; background: rgba(255,255,255,0.06); border-radius: 99px; overflow: hidden; }
+    .progress-bar { height: 100%; border-radius: 99px; transition: width 0.8s cubic-bezier(0.22,1,0.36,1); }
+
+    @keyframes fadeUp { from { opacity:0; transform: translateY(12px); } to { opacity:1; transform: translateY(0); } }
+    @keyframes slideIn { from { opacity:0; transform: translateX(-8px); } to { opacity:1; transform: translateX(0); } }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes countUp { from { opacity: 0; transform: scale(0.5); } to { opacity: 1; transform: scale(1); } }
+
+    .fade-up { animation: fadeUp 0.5s ease-out both; }
+    .slide-in { animation: slideIn 0.3s ease-out both; }
+    .count-up { animation: countUp 0.4s cubic-bezier(0.22,1,0.36,1) both; }
+
+    .spinner {
+      border: 2px solid rgba(255,255,255,0.1); border-top-color: currentColor;
+      border-radius: 50%; width: 16px; height: 16px;
+      animation: spin 0.7s linear infinite; display: inline-block; vertical-align: middle;
+    }
+
+    .stat-card {
+      background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05);
+      border-radius: 12px; padding: 16px; text-align: center; transition: all 0.3s;
+    }
+    .stat-card:hover { background: rgba(255,255,255,0.04); border-color: rgba(255,255,255,0.08); }
+
+    input[type="range"] {
+      -webkit-appearance: none; width: 100%; height: 6px; border-radius: 99px;
+      background: rgba(255,255,255,0.06); outline: none;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%;
+      background: linear-gradient(135deg, #10b981, #34d399);
+      box-shadow: 0 2px 8px rgba(16,185,129,0.4); cursor: pointer; transition: transform 0.2s;
+    }
+    input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.15); }
+
+    .badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 0.65rem; padding: 3px 10px; border-radius: 99px; font-weight: 500;
+    }
+    .badge-green { background: rgba(16,185,129,0.1); color: #34d399; border: 1px solid rgba(16,185,129,0.2); }
+    .badge-blue { background: rgba(59,130,246,0.1); color: #60a5fa; border: 1px solid rgba(59,130,246,0.2); }
+    .badge-purple { background: rgba(139,92,246,0.1); color: #a78bfa; border: 1px solid rgba(139,92,246,0.2); }
+    .badge-amber { background: rgba(245,158,11,0.1); color: #fbbf24; border: 1px solid rgba(245,158,11,0.2); }
+    .badge-yellow { background: rgba(234,179,8,0.1); color: #facc15; border: 1px solid rgba(234,179,8,0.2); }
+    .badge-red { background: rgba(239,68,68,0.1); color: #f87171; border: 1px solid rgba(239,68,68,0.2); }
+
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 99px; }
+
+    .dot-pulse { position: relative; }
+    .dot-pulse::after {
+      content: ''; position: absolute; top: -2px; left: -2px; width: calc(100% + 4px); height: calc(100% + 4px);
+      border-radius: 50%; background: inherit; opacity: 0;
+      animation: dot-ring 2s ease-out infinite;
+    }
+    @keyframes dot-ring { 0% { opacity:0.6; transform:scale(1); } 100% { opacity:0; transform:scale(2.5); } }
+
+    .divider { height: 1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent); }
+
+    .verified-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      background: rgba(16,185,129,0.1); color: #34d399;
+      border: 1px solid rgba(16,185,129,0.2); border-radius: 99px;
+      font-size: 0.6rem; padding: 2px 8px; font-weight: 500;
+    }
+  </style>
+</head>
+<body class="text-slate-200 min-h-screen">
+
+<div class="mesh-bg"><div class="mesh-orb"></div></div>
+<div class="grid-overlay"></div>
+
+<!-- HEADER -->
+<header class="sticky top-0 z-50 border-b border-white/5" style="background:rgba(2,6,23,0.75);backdrop-filter:blur(20px);">
+  <div class="max-w-6xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="shield">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          <path d="M9 12l2 2 4-4" opacity="0.7"/>
+        </svg>
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="text-base font-bold tracking-tight">ERC-8004</h1>
+          <span class="gradient-text font-semibold text-sm">Trustless Agents</span>
+          <span class="verified-badge">&#x2713; V2 Verified</span>
+        </div>
+        <p class="text-[10px] text-slate-500 tracking-wide">SEPOLIA TESTNET · LIVE DEMO</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-3">
+      <div id="network-badge" class="badge text-slate-500" style="border-color:rgba(255,255,255,0.08);">
+        <span class="w-1.5 h-1.5 rounded-full bg-slate-600"></span> Not Connected
+      </div>
+      <button id="connect-btn" onclick="connectWallet()" class="btn btn-blue text-sm px-5 py-2">
+        <span class="flex items-center gap-2">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="14" rx="2"/><path d="M16 14h.01M2 10l5.17-4.4A2 2 0 0118.64 5.6L22 10"/></svg>
+          Connect
+        </span>
+      </button>
+      <div id="wallet-info" class="hidden"></div>
+    </div>
+  </div>
+</header>
+
+<!-- MAIN -->
+<main class="max-w-6xl mx-auto px-6 py-6">
+
+  <!-- Hero -->
+  <div class="text-center mb-8 fade-up">
+    <h2 class="text-2xl font-bold mb-2">
+      <span class="gradient-text">On-Chain Agent Identity</span>
+    </h2>
+    <p class="text-sm text-slate-400 max-w-xl mx-auto leading-relaxed">
+      ERC-8004 规范实现：为 AI Agent 提供链上身份（NFT）、声誉评分和多重验证，构建可信的去中心化自主经济体
+    </p>
+  </div>
+
+  <!-- Stats -->
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6 fade-up" style="animation-delay:0.1s">
+    <div class="stat-card">
+      <div class="text-lg font-bold text-blue-400 mono" id="stat-identities">-</div>
+      <div class="text-[10px] text-slate-500 mt-1 uppercase tracking-wider">Identities</div>
+    </div>
+    <div class="stat-card">
+      <div class="text-lg font-bold text-green-400 mono" id="stat-score">-</div>
+      <div class="text-[10px] text-slate-500 mt-1 uppercase tracking-wider">Avg Score</div>
+    </div>
+    <div class="stat-card">
+      <div class="text-lg font-bold text-purple-400 mono" id="stat-feedbacks">-</div>
+      <div class="text-[10px] text-slate-500 mt-1 uppercase tracking-wider">Feedbacks</div>
+    </div>
+    <div class="stat-card">
+      <div class="text-lg font-bold text-amber-400 mono" id="stat-validations">-</div>
+      <div class="text-[10px] text-slate-500 mt-1 uppercase tracking-wider">Validations</div>
+    </div>
+  </div>
+
+  <!-- Contract Links (V2 - Verified on Etherscan) -->
+  <div class="flex flex-wrap items-center justify-center gap-2 mb-6 text-[11px] fade-up" style="animation-delay:0.15s">
+    <span class="text-slate-600">V2 CONTRACTS</span>
+    <a href="https://sepolia.etherscan.io/address/0xc0D37E6F7B214C92f292FC0534195027CD38AB79" target="_blank" class="badge badge-blue mono">Identity</a>
+    <a href="https://sepolia.etherscan.io/address/0xeD24f20485F025a85FB6e410900e24623B13D622" target="_blank" class="badge badge-green mono">Reputation</a>
+    <a href="https://sepolia.etherscan.io/address/0xa390763C43125F9fA52190AacaFFd9EC8feF868c" target="_blank" class="badge badge-purple mono">Validation</a>
+  </div>
+
+  <div class="divider mb-6"></div>
+
+  <!-- Tabs -->
+  <div class="flex gap-1 mb-6 border-b border-white/5">
+    <div class="tab-btn active" data-tab="identity" onclick="switchTab('identity')">
+      <span class="flex items-center gap-1.5">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-3.086-3.086a2 2 0 00-2.828 0L6 21"/></svg>
+        Identity
+      </span>
+    </div>
+    <div class="tab-btn" data-tab="reputation" onclick="switchTab('reputation')">
+      <span class="flex items-center gap-1.5">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26"/></svg>
+        Reputation
+      </span>
+    </div>
+    <div class="tab-btn" data-tab="validation" onclick="switchTab('validation')">
+      <span class="flex items-center gap-1.5">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Validation
+      </span>
+    </div>
+    <div class="tab-btn" data-tab="log" onclick="switchTab('log')">
+      <span class="flex items-center gap-1.5">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        Activity
+      </span>
+    </div>
+  </div>
+
+  <!-- IDENTITY TAB -->
+  <div id="tab-identity" class="tab-content">
+    <div class="grid grid-cols-1 lg:grid-cols-5 gap-4">
+      <div class="lg:col-span-2 glass rounded-2xl p-6 glow-blue">
+        <div class="flex items-center gap-2 mb-4">
+          <div class="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+          </div>
+          <div>
+            <h3 class="text-sm font-semibold gradient-text-blue">Create Identity</h3>
+            <p class="text-[10px] text-slate-500">铸造 ERC-721 Agent 身份</p>
+          </div>
+        </div>
+        <div class="space-y-3">
+          <div>
+            <label class="text-[10px] text-slate-500 uppercase tracking-wider mb-1 block">Metadata URI</label>
+            <input id="id-uri" type="text" value="ipfs://QmERC8004V2/agent-metadata.json" class="input mono text-xs" placeholder="ipfs://...">
+          </div>
+          <button id="btn-create-id" onclick="createIdentity()" class="btn btn-blue w-full flex items-center justify-center gap-2">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+            Mint Identity NFT
+          </button>
+        </div>
+      </div>
+
+      <div class="lg:col-span-3 glass rounded-2xl p-6">
+        <div class="flex items-center justify-between mb-4">
+          <div class="flex items-center gap-2">
+            <div class="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            </div>
+            <h3 class="text-sm font-semibold gradient-text-blue">Registered Agents</h3>
+          </div>
+          <span id="id-count" class="badge badge-blue">0 agents</span>
+        </div>
+        <div id="identity-list" class="space-y-2 max-h-72 overflow-y-auto pr-1">
+          <div class="flex flex-col items-center justify-center py-8 text-slate-600">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" opacity="0.3"><rect x="2" y="6" width="20" height="14" rx="2"/><path d="M16 14h.01M2 10l5.17-4.4A2 2 0 0118.64 5.6L22 10"/></svg>
+            <p class="text-xs mt-2">点击 Connect 开始</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- REPUTATION TAB -->
+  <div id="tab-reputation" class="tab-content hidden">
+    <div class="grid grid-cols-1 lg:grid-cols-5 gap-4">
+      <div class="lg:col-span-2 glass rounded-2xl p-6 glow-green">
+        <div class="flex items-center gap-2 mb-4">
+          <div class="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26"/></svg>
+          </div>
+          <div>
+            <h3 class="text-sm font-semibold gradient-text-green">Submit Feedback</h3>
+            <p class="text-[10px] text-slate-500">声明评分 (-100 ~ +100)</p>
+          </div>
+        </div>
+        <div class="space-y-4">
+          <div>
+            <label class="text-[10px] text-slate-500 uppercase tracking-wider mb-1 block">Agent Token ID</label>
+            <input id="rep-tokenid" type="number" value="1" min="1" class="input mono text-xs">
+          </div>
+          <div>
+            <div class="flex justify-between items-center mb-2">
+              <label class="text-[10px] text-slate-500 uppercase tracking-wider">Score</label>
+              <span id="score-display" class="mono text-sm font-bold text-emerald-400">80</span>
+            </div>
+            <input id="rep-score" type="range" min="-100" max="100" value="80" oninput="updateScoreDisplay(this.value)">
+            <div class="flex justify-between text-[10px] text-slate-600 mt-1"><span>-100</span><span>0</span><span>+100</span></div>
+          </div>
+          <div>
+            <label class="text-[10px] text-slate-500 uppercase tracking-wider mb-1 block">Comment</label>
+            <input id="rep-comment" type="text" placeholder="Agent performance review..." class="input text-xs input-green">
+          </div>
+          <button id="btn-submit-feedback" onclick="submitFeedback()" class="btn btn-green w-full flex items-center justify-center gap-2">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            Submit Feedback
+          </button>
+        </div>
+      </div>
+
+      <div class="lg:col-span-3 glass rounded-2xl p-6">
+        <div class="flex items-center gap-2 mb-5">
+          <div class="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
+          </div>
+          <h3 class="text-sm font-semibold gradient-text-green">Reputation Dashboard</h3>
+        </div>
+        <div id="rep-display">
+          <div class="flex flex-col items-center justify-center py-10 text-slate-600">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" opacity="0.3"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
+            <p class="text-xs mt-2">输入 Token ID 查询声誉</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- VALIDATION TAB -->
+  <div id="tab-validation" class="tab-content hidden">
+    <div class="grid grid-cols-1 lg:grid-cols-5 gap-4">
+      <div class="lg:col-span-2 glass rounded-2xl p-6 glow-purple">
+        <div class="flex items-center gap-2 mb-4">
+          <div class="w-8 h-8 rounded-lg bg-violet-500/10 flex items-center justify-center">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          </div>
+          <div>
+            <h3 class="text-sm font-semibold gradient-text-purple">Record Validation</h3>
+            <p class="text-[10px] text-slate-500">TEE / ZKML / Stake / Multisig</p>
+          </div>
+        </div>
+        <div class="space-y-3">
+          <div>
+            <label class="text-[10px] text-slate-500 uppercase tracking-wider mb-1 block">Agent Token ID</label>
+            <input id="val-tokenid" type="number" value="1" min="1" class="input mono text-xs">
+          </div>
+          <div>
+            <label class="text-[10px] text-slate-500 uppercase tracking-wider mb-1 block">Validation Type</label>
+            <select id="val-type" class="input text-xs input-purple">
+              <option value="0">&#x1F680; TEE — Trusted Execution</option>
+              <option value="1">&#x1F9EC; ZKML — Zero-Knowledge ML</option>
+              <option value="2">&#x1F4B0; STAKE — Economic Bond</option>
+              <option value="3">&#x1F510; MULTISIG — Multi-Signature</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-[10px] text-slate-500 uppercase tracking-wider mb-1 block">Result</label>
+            <div class="grid grid-cols-2 gap-2">
+              <label class="glass rounded-lg p-2.5 text-center cursor-pointer border-2 border-emerald-500/30 has-[:checked]:border-emerald-500 has-[:checked]:bg-emerald-500/10 transition-all">
+                <input type="radio" name="val-passed" value="true" checked class="hidden">
+                <span class="text-emerald-400 text-sm">&#x2713; Passed</span>
+              </label>
+              <label class="glass rounded-lg p-2.5 text-center cursor-pointer border-2 border-transparent hover:border-red-500/30 has-[:checked]:border-red-500 has-[:checked]:bg-red-500/10 transition-all">
+                <input type="radio" name="val-passed" value="false" class="hidden">
+                <span class="text-red-400 text-sm">&#x2717; Failed</span>
+              </label>
+            </div>
+          </div>
+          <button id="btn-record-val" onclick="recordValidation()" class="btn btn-purple w-full flex items-center justify-center gap-2">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+            Record Validation
+          </button>
+        </div>
+      </div>
+
+      <div class="lg:col-span-3 glass rounded-2xl p-6">
+        <div class="flex items-center gap-2 mb-5">
+          <div class="w-8 h-8 rounded-lg bg-violet-500/10 flex items-center justify-center">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+          </div>
+          <h3 class="text-sm font-semibold gradient-text-purple">Validation Records</h3>
+        </div>
+        <div id="val-display">
+          <div class="flex flex-col items-center justify-center py-10 text-slate-600">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" opacity="0.3"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            <p class="text-xs mt-2">连接钱包查看验证记录</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ACTIVITY LOG TAB -->
+  <div id="tab-log" class="tab-content hidden">
+    <div class="glass rounded-2xl p-6">
+      <div class="flex items-center gap-2 mb-4">
+        <div class="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        </div>
+        <h3 class="text-sm font-semibold text-slate-300">Activity Log</h3>
+        <button onclick="txLogs=[];document.getElementById('tx-log').innerHTML='<div class=\'text-center py-8 text-slate-600 text-xs\'>No activity yet</div>'" class="btn-ghost badge text-slate-500 ml-auto text-[10px] cursor-pointer">Clear</button>
+      </div>
+      <div id="tx-log" class="space-y-1 max-h-96 overflow-y-auto pr-1">
+        <div class="text-center py-8 text-slate-600 text-xs">No activity yet</div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<!-- FOOTER -->
+<footer class="border-t border-white/5 mt-12">
+  <div class="max-w-6xl mx-auto px-6 py-6 flex flex-col md:flex-row items-center justify-between gap-3">
+    <div class="flex items-center gap-2 text-xs text-slate-600">
+      <span class="shield" style="width:20px;height:20px;border-radius:5px;">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      </span>
+      ERC-8004 Trustless Agents · Sepolia Testnet
+    </div>
+    <div class="flex items-center gap-4 text-[10px] text-slate-600">
+      <span>Powered by Hardhat + ethers.js v6</span>
+      <span class="text-slate-800">|</span>
+      <span>Solidity 0.8.19</span>
+      <span class="text-slate-800">|</span>
+      <span>OpenZeppelin 4.9</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+// ========== CONFIG ==========
+const PUBLIC_RPCS = [
+  'https://ethereum-sepolia.publicnode.com',
+  'https://rpc.ankr.com/eth_sepolia',
+  'https://eth-sepolia.public.blastapi.io',
+  'https://1rpc.io/sepolia',
+  'https://eth.drpc.org',
+  'https://sepolia.gateway.tenderly.co'
+];
+
+const CONTRACTS = {
+  identity:   '0xc0D37E6F7B214C92f292FC0534195027CD38AB79',
+  reputation: '0xeD24f20485F025a85FB6e410900e24623B13D622',
+  validation: '0xa390763C43125F9fA52190AacaFFd9EC8feF868c'
+};
+
+const IDENTITY_ABI = [
+  "function createIdentity(string metadataURI) returns (uint256)",
+  "function hasValidIdentity(address) view returns (bool)",
+  "function ownerOf(uint256) view returns (address)",
+  "function nextTokenId() view returns (uint256)",
+  "function getIdentity(uint256) view returns (tuple(address owner, string metadataURI, uint256 createdAt, bool active))",
+  "function addCapability(uint256 agentId, string capability)",
+  "function updateTrustLevel(uint256 agentId, uint8 level)",
+  "function trustLevel(uint256) view returns (uint8)"
+];
+
+const REPUTATION_ABI = [
+  "function submitFeedback(uint256 agentId, int256 score, string comment, bytes32 taskId)",
+  "function getReputationScore(uint256) view returns (int256)",
+  "function reputationStats(uint256) view returns (int256 totalScore, uint256 feedbackCount, uint256 positiveCount, uint256 negativeCount)"
+];
+
+const VALIDATION_ABI = [
+  "function addValidator(address)",
+  "function recordValidation(uint256 agentId, uint8 vType, bytes32 resultHash, bool passed, bytes proofData) payable",
+  "function getLatestValidation(uint256) view returns (tuple(uint8 vType, address validator, bytes32 resultHash, uint256 timestamp, bool passed, uint256 stakeAmount, bytes proofData))",
+  "function isValidator(address) view returns (bool)"
+];
+
+let provider, signer, walletAddress;
+let identityContract, reputationContract, validationContract;
+let hasMetaMask = false;
+let txLogs = [];
+let globalStats = { identities: 0, score: 0, feedbacks: 0, validations: 0 };
+
+// ========== MULTI-RPC PROVIDER ==========
+class FallbackProvider {
+  constructor(rpcUrls) {
+    this.rpcs = rpcUrls;
+    this.idx = 0;
+  }
+  async request(req) {
+    const errors = [];
+    for (let i = 0; i < this.rpcs.length; i++) {
+      const url = this.rpcs[(this.idx + i) % this.rpcs.length];
+      try {
+        const resp = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(req)
+        });
+        if (!resp.ok) { errors.push(url + ': HTTP ' + resp.status); continue; }
+        const data = await resp.json();
+        if (data.error) { errors.push(url + ': ' + data.error.message); continue; }
+        this.idx = (this.idx + i) % this.rpcs.length;
+        return data;
+      } catch(e) { errors.push(url + ': ' + e.message); }
+    }
+    throw new Error('All RPCs failed: ' + errors.join('; '));
+  }
+}
+
+const fallbackRpc = new FallbackProvider(PUBLIC_RPCS);
+
+// ========== HELPERS ==========
+function updateScoreDisplay(val) {
+  const el = document.getElementById('score-display');
+  el.textContent = val;
+  el.className = 'mono text-sm font-bold ' + (val >= 70 ? 'text-emerald-400' : val >= 40 ? 'text-yellow-400' : val >= 0 ? 'text-orange-400' : 'text-red-400');
+}
+
+function updateStats() {
+  document.getElementById('stat-identities').textContent = globalStats.identities || '-';
+  document.getElementById('stat-score').textContent = globalStats.score || '-';
+  document.getElementById('stat-feedbacks').textContent = globalStats.feedbacks || '-';
+  document.getElementById('stat-validations').textContent = globalStats.validations || '-';
+}
+
+function shortAddr(a) { return a ? a.slice(0,6) + '...' + a.slice(-4) : '0x...'; }
+
+// ========== TX LOG ==========
+function addLog(type, message) {
+  const now = new Date().toLocaleTimeString('zh-CN');
+  const icons = { success: '\u2713', pending: '\u23F3', error: '\u2717', system: '\uD83D\uDCE1', info: '\u2139' };
+  const colors = { success: 'text-emerald-400', pending: 'text-amber-400', error: 'text-red-400', system: 'text-blue-400', info: 'text-cyan-400' };
+  const bgs = { success: 'bg-emerald-500/5', pending: 'bg-amber-500/5', error: 'bg-red-500/5', system: 'bg-blue-500/5', info: 'bg-cyan-500/5' };
+  txLogs.unshift({ time: now, type, message });
+  document.getElementById('tx-log').innerHTML = txLogs.slice(0,50).map(log =>
+    '<div class="slide-in flex items-center gap-3 text-xs py-2 px-3 rounded-lg ' + bgs[log.type] + '">' +
+    '<span class="mono text-slate-600 text-[10px] shrink-0">' + log.time + '</span>' +
+    '<span class="' + colors[log.type] + ' shrink-0">' + icons[log.type] + '</span>' +
+    '<span class="text-slate-400 truncate">' + log.message + '</span></div>'
+  ).join('');
+}
+
+// ========== CONNECT ==========
+async function connectWallet() {
+  try {
+    // Try MetaMask first
+    if (typeof window.ethereum !== 'undefined') {
+      hasMetaMask = true;
+      addLog('info', 'MetaMask detected, switching to Sepolia...');
+      try {
+        await window.ethereum.request({ method: 'eth_requestAccounts' });
+        provider = new ethers.providers.Web3Provider(window.ethereum);
+        const network = await provider.getNetwork();
+        if (Number(network.chainId) !== 11155111) {
+          addLog('info', 'Switching to Sepolia network...');
+          try {
+            await window.ethereum.request({
+              method: 'wallet_switchEthereumChain',
+              params: [{ chainId: '0xaa36a7' }]
+            });
+          } catch(e) {
+            if (e.code === 4902) {
+              await window.ethereum.request({
+                method: 'wallet_addEthereumChain',
+                params: [{
+                  chainId: '0xaa36a7',
+                  chainName: 'Sepolia Testnet',
+                  nativeCurrency: { name: 'SepoliaETH', symbol: 'ETH', decimals: 18 },
+                  rpcUrls: PUBLIC_RPCS.slice(0, 2),
+                  blockExplorerUrls: ['https://sepolia.etherscan.io']
+                }]
+              });
+            }
+          }
+          provider = new ethers.providers.Web3Provider(window.ethereum);
+        }
+        signer = await provider.getSigner();
+        walletAddress = await signer.getAddress();
+        addLog('success', 'MetaMask connected: ' + shortAddr(walletAddress));
+      } catch(e) {
+        addLog('info', 'MetaMask rejected or failed, falling back to read-only');
+        hasMetaMask = false;
+      }
+    }
+
+    // Fallback: use public RPC (read-only)
+    if (!provider) {
+      addLog('info', 'No wallet detected, connecting via public RPC (read-only)...');
+      provider = new ethers.JsonRpcProvider(PUBLIC_RPCS[0]);
+    }
+
+    // Test connection
+    const blockNum = await provider.getBlockNumber();
+    addLog('success', 'Connected! Block: ' + blockNum);
+
+    identityContract = new ethers.Contract(CONTRACTS.identity, IDENTITY_ABI, provider);
+    reputationContract = new ethers.Contract(CONTRACTS.reputation, REPUTATION_ABI, provider);
+    validationContract = new ethers.Contract(CONTRACTS.validation, VALIDATION_ABI, provider);
+
+    // Update UI
+    document.getElementById('connect-btn').classList.add('hidden');
+    const wi = document.getElementById('wallet-info');
+    wi.classList.remove('hidden');
+
+    if (hasMetaMask && walletAddress) {
+      wi.innerHTML = '<div class="flex items-center gap-2 badge badge-green"><span class="w-2 h-2 rounded-full bg-emerald-400 dot-pulse"></span><span class="mono">' + shortAddr(walletAddress) + '</span></div>';
+      const nb = document.getElementById('network-badge');
+      nb.className = 'badge badge-green';
+      nb.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Sepolia · Read/Write';
+    } else {
+      wi.innerHTML = '<div class="flex items-center gap-2 badge badge-yellow"><span class="w-2 h-2 rounded-full bg-yellow-400"></span><span class="mono">Read-Only</span></div>';
+      const nb = document.getElementById('network-badge');
+      nb.className = 'badge badge-yellow';
+      nb.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-yellow-400"></span> Sepolia · Read-Only';
+    }
+
+    await loadAll();
+  } catch (e) {
+    console.error(e);
+    addLog('error', 'Connection failed: ' + (e.message||'').substring(0,120));
+    // Show retry button
+    const btn = document.getElementById('connect-btn');
+    btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg> Retry Connection';
+  }
+}
+
+async function loadAll() {
+  await loadIdentityInfo();
+  await loadReputation(1);
+  await loadValidation(1);
+}
+
+// ========== META MASK TX ==========
+async function metamaskTx(contract, method, args, value) {
+  if (!hasMetaMask || !signer) { alert('MetaMask required for write operations'); return null; }
+  const c = new ethers.Contract(
+    CONTRACTS[contract],
+    contract === 'identity' ? IDENTITY_ABI : contract === 'reputation' ? REPUTATION_ABI : VALIDATION_ABI,
+    signer
+  );
+  addLog('pending', contract + '.' + method + '(...) waiting for confirmation...');
+  try {
+    const txOpts = value ? { value } : {};
+    const tx = await c[method](...args, txOpts);
+    addLog('pending', 'TX submitted: ' + tx.hash);
+    const receipt = await tx.wait();
+    addLog('success', method + ' confirmed! Block: ' + receipt.blockNumber + ', Gas: ' + receipt.gasUsed);
+    return receipt;
+  } catch(e) {
+    const msg = e.reason || e.shortMessage || e.message || 'Unknown';
+    addLog('error', method + ' failed: ' + msg.substring(0,100));
+    throw e;
+  }
+}
+
+// ========== IDENTITY ==========
+async function createIdentity() {
+  if (!hasMetaMask) { alert('Connect MetaMask to mint Identity NFT'); return; }
+  const uri = document.getElementById('id-uri').value.trim();
+  if (!uri) return;
+  const btn = document.getElementById('btn-create-id');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Minting...';
+  try {
+    await metamaskTx('identity', 'createIdentity', [uri]);
+    await loadAll();
+  } catch (e) {
+    addLog('error', 'Mint failed: ' + e.message.substring(0,80));
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg> Mint Identity NFT';
+  }
+}
+
+async function loadIdentityInfo() {
+  try {
+    const nextId = await identityContract.nextTokenId();
+    const count = Number(nextId) - 1;
+    globalStats.identities = count;
+    updateStats();
+    document.getElementById('id-count').textContent = count + ' agent' + (count !== 1 ? 's' : '');
+    const list = document.getElementById('identity-list');
+    if (count === 0) {
+      list.innerHTML = '<div class="flex flex-col items-center py-8 text-slate-600"><p class="text-xs">No registered agents</p></div>';
+      return;
+    }
+    let html = '';
+    for (let i = 1; i <= Math.min(count, 20); i++) {
+      try {
+        const owner = await identityContract.ownerOf(i);
+        const id = await identityContract.getIdentity(i);
+        const time = new Date(Number(id.createdAt)*1000).toLocaleString('zh-CN');
+        const shortUri = id.metadataURI.length > 38 ? id.metadataURI.slice(0,38) + '...' : id.metadataURI;
+        const isMe = walletAddress && owner.toLowerCase() === walletAddress.toLowerCase();
+        html += '<div class="glass rounded-xl p-4 slide-in" style="animation-delay:' + ((i-1)*0.05) + 's;border-color:' + (isMe?'rgba(59,130,246,0.15)':'rgba(255,255,255,0.04)') + '">' +
+          '<div class="flex justify-between items-start mb-2">' +
+            '<div class="flex items-center gap-2">' +
+              '<div class="w-7 h-7 rounded-md bg-gradient-to-br from-blue-500/20 to-purple-500/20 flex items-center justify-center text-[10px] font-bold text-blue-400 mono">#' + i + '</div>' +
+              '<div><span class="text-xs font-medium text-slate-200">Agent Identity</span>' +
+              (isMe ? '<span class="badge badge-blue ml-1">yours</span>' : '') +
+            '</div></div>' +
+            '<div class="flex items-center gap-1.5">' +
+              '<span class="w-1.5 h-1.5 rounded-full ' + (id.active?'bg-emerald-400':'bg-red-400') + '"></span>' +
+              '<span class="text-[10px] ' + (id.active?'text-emerald-400':'text-red-400') + '">' + (id.active?'Active':'Inactive') + '</span></div></div>' +
+          '<div class="flex items-center justify-between text-[10px]">' +
+            '<span class="text-slate-500">Owner: <span class="mono text-slate-400">' + shortAddr(owner) + '</span></span>' +
+            '<span class="text-slate-600">' + time + '</span></div>' +
+          '<div class="mt-1 text-[10px] text-slate-600 mono truncate">' + shortUri + '</div></div>';
+      } catch(e) {}
+    }
+    list.innerHTML = html;
+  } catch(e) {
+    document.getElementById('identity-list').innerHTML = '<p class="text-red-400 text-xs">Query failed: ' + e.message.substring(0,60) + '</p>';
+  }
+}
+
+// ========== REPUTATION ==========
+async function submitFeedback() {
+  if (!hasMetaMask) { alert('Connect MetaMask to submit feedback'); return; }
+  const tokenId = parseInt(document.getElementById('rep-tokenid').value);
+  const score = parseInt(document.getElementById('rep-score').value);
+  const comment = document.getElementById('rep-comment').value || 'No comment';
+  if (!tokenId) return;
+  const btn = document.getElementById('btn-submit-feedback');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Submitting...';
+  try {
+    const taskId = '0x' + Array.from(new TextEncoder().encode('erc8004-' + tokenId + '-' + Date.now())).map(b => b.toString(16).padStart(2,'0')).join('').padEnd(64,'0').slice(0,64);
+    await metamaskTx('reputation', 'submitFeedback', [tokenId, score, comment, taskId]);
+    document.getElementById('rep-comment').value = '';
+    await loadReputation(tokenId);
+  } catch (e) {
+    addLog('error', 'Feedback failed: ' + e.message.substring(0,100));
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Submit Feedback';
+  }
+}
+
+async function loadReputation(tokenId) {
+  if (!reputationContract) return;
+  const display = document.getElementById('rep-display');
+  try {
+    const [score, stats] = await Promise.all([
+      reputationContract.getReputationScore(tokenId),
+      reputationContract.reputationStats(tokenId)
+    ]);
+    const avg = Number(score);
+    const total = Number(stats.feedbackCount);
+    const pos = Number(stats.positiveCount);
+    const neg = Number(stats.negativeCount);
+    globalStats.score = avg;
+    globalStats.feedbacks = total;
+    updateStats();
+    const pct = Math.min(Math.max((avg + 100) / 2, 0), 100);
+    const color = avg >= 70 ? '#10b981' : avg >= 40 ? '#eab308' : avg >= 0 ? '#f97316' : '#ef4444';
+    const label = avg >= 80 ? 'Excellent' : avg >= 60 ? 'Good' : avg >= 40 ? 'Fair' : avg >= 0 ? 'Poor' : 'Critical';
+    const labelColor = avg >= 80 ? 'emerald' : avg >= 60 ? 'blue' : avg >= 40 ? 'amber' : avg >= 0 ? 'orange' : 'red';
+    display.innerHTML = '<div class="text-center mb-6">' +
+      '<div class="count-up text-5xl font-extrabold" style="color:' + color + '">' + avg + '</div>' +
+      '<div class="text-[10px] text-slate-500 mt-1 uppercase tracking-widest">Reputation Score</div>' +
+      '<span class="badge badge-' + labelColor + ' mt-2">' + label + '</span></div>' +
+      '<div class="mb-4"><div class="flex justify-between text-[10px] text-slate-500 mb-1"><span>Reputation</span><span>' + pct + '%</span></div>' +
+      '<div class="progress-track"><div class="progress-bar" style="width:' + pct + '%;background:linear-gradient(90deg,' + color + ',' + color + 'dd)"></div></div></div>' +
+      '<div class="grid grid-cols-3 gap-2">' +
+      '<div class="stat-card"><div class="text-xl font-bold text-blue-400 count-up">' + total + '</div><div class="text-[10px] text-slate-500 mt-0.5">Total</div></div>' +
+      '<div class="stat-card"><div class="text-xl font-bold text-emerald-400 count-up">' + pos + '</div><div class="text-[10px] text-slate-500 mt-0.5">Positive</div></div>' +
+      '<div class="stat-card"><div class="text-xl font-bold text-red-400 count-up">' + neg + '</div><div class="text-[10px] text-slate-500 mt-0.5">Negative</div></div></div>' +
+      '<div class="mt-3 text-center text-[10px] text-slate-600">Agent Token #' + tokenId + '</div>';
+  } catch(e) {
+    display.innerHTML = '<div class="flex flex-col items-center py-10 text-slate-600"><p class="text-xs">No data</p></div>';
+  }
+}
+
+// ========== VALIDATION ==========
+async function recordValidation() {
+  if (!hasMetaMask) { alert('Connect MetaMask to record validation'); return; }
+  const tokenId = parseInt(document.getElementById('val-tokenid').value);
+  const vType = parseInt(document.getElementById('val-type').value);
+  const passed = document.querySelector('input[name="val-passed"]:checked').value === 'true';
+  if (!tokenId) return;
+  const btn = document.getElementById('btn-record-val');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Recording...';
+  try {
+    const types = ['TEE','ZKML','STAKE','MULTISIG'];
+    const resultHash = '0x' + Array.from(new TextEncoder().encode(types[vType] + '-' + Date.now())).map(b => b.toString(16).padStart(2,'0')).join('').padEnd(64,'0').slice(0,64);
+    await metamaskTx('validation', 'recordValidation', [tokenId, vType, resultHash, passed, '0x']);
+    globalStats.validations++;
+    updateStats();
+    await loadValidation(tokenId);
+  } catch (e) {
+    addLog('error', 'Validation failed: ' + e.message.substring(0,100));
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Record Validation';
+  }
+}
+
+async function loadValidation(tokenId) {
+  if (!validationContract) return;
+  const display = document.getElementById('val-display');
+  try {
+    const latest = await validationContract.getLatestValidation(tokenId);
+    const types = ['TEE','ZKML','STAKE','MULTISIG'];
+    const icons = ['\uD83D\uDE80','\uD83E\uDDEC','\uD83D\uDCB0','\uD83D\uDD10'];
+    const colors = ['blue','violet','amber','emerald'];
+    const typeName = types[Number(latest.vType)] || 'Unknown';
+    const icon = icons[Number(latest.vType)] || '\u2717';
+    const color = colors[Number(latest.vType)] || 'slate';
+    const time = new Date(Number(latest.timestamp)*1000).toLocaleString('zh-CN');
+    const passed = latest.passed;
+    display.innerHTML = '<div class="glass rounded-xl p-4 border ' + (passed?'border-emerald-500/20':'border-red-500/20') + '">' +
+      '<div class="flex items-center justify-between mb-3">' +
+        '<div class="flex items-center gap-2"><span class="text-lg">' + icon + '</span><span class="text-xs font-semibold text-' + color + '-400">' + typeName + '</span></div>' +
+        '<span class="badge ' + (passed?'badge-green':'badge-red') + '">' + (passed?'\u2713 Passed':'\u2717 Failed') + '</span></div>' +
+      '<div class="space-y-1.5 text-[10px]">' +
+        '<div class="flex justify-between"><span class="text-slate-500">Validator</span><span class="mono text-slate-400">' + shortAddr(latest.validator) + '</span></div>' +
+        '<div class="flex justify-between"><span class="text-slate-500">Result Hash</span><span class="mono text-slate-500">' + latest.resultHash.slice(0,14) + '...</span></div>' +
+        '<div class="flex justify-between"><span class="text-slate-500">Time</span><span class="text-slate-500">' + time + '</span></div></div></div>' +
+      '<div class="text-center text-[10px] text-slate-600 mt-3">Agent Token #' + tokenId + '</div>';
+  } catch(e) {
+    display.innerHTML = '<div class="flex flex-col items-center py-10 text-slate-600"><p class="text-xs">No validation records</p></div>';
+  }
+}
+
+// ========== TABS ==========
+function switchTab(tabName) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+  document.querySelectorAll('.tab-btn').forEach(el => {
+    el.classList.remove('active');
+    if (el.dataset.tab === tabName) el.classList.add('active');
+  });
+  const panel = document.getElementById('tab-' + tabName);
+  panel.classList.remove('hidden');
+  panel.classList.add('fade-up');
+  if (tabName === 'reputation' && reputationContract) loadReputation(parseInt(document.getElementById('rep-tokenid')?.value || 1));
+  if (tabName === 'validation' && validationContract) loadValidation(parseInt(document.getElementById('val-tokenid')?.value || 1));
+}
+
+// ========== INIT ==========
+window.addEventListener('load', () => {
+  updateScoreDisplay(80);
+  addLog('system', 'ERC-8004 V2 Demo \u2014 Click Connect to access Sepolia');
+  addLog('info', 'MetaMask detected: ' + (typeof window.ethereum !== 'undefined' ? 'Yes' : 'No'));
+});
+</script>
+</body>
+</html>
